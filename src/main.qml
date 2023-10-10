@@ -56,6 +56,7 @@ ApplicationWindow {
 
         Rectangle {
             implicitHeight: window.height/2
+            Layout.maximumHeight: 418 /* Taken from the image above */
 
             Image {
                 id: image
@@ -64,14 +65,15 @@ ApplicationWindow {
                 fillMode: Image.PreserveAspectFit
                 source: "icons/logo_stacked_imager.png"
                 width: window.width
-                height: window.height/2
+                height: parent.height
             }
+            
         }
 
         Rectangle {
             color: "#c31c4a"
             implicitWidth: window.width
-            implicitHeight: window.height/2
+            implicitHeight: window.height - image.height
 
             GridLayout {
                 id: gridLayout
