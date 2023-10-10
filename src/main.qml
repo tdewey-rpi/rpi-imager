@@ -69,23 +69,24 @@ ApplicationWindow {
         spacing: 0
 
         Rectangle {
-            implicitHeight: window.height/2
+            implicitHeight: window.height/3
 
             Image {
                 id: image
-                Layout.fillWidth: true
+                //Layout.fillWidth: true
+                Layout.fillHeight: true
                 Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
                 fillMode: Image.PreserveAspectFit
-                source: "icons/logo_stacked_imager.png"
+                source: "icons/logo_sxs_imager.png"
                 width: window.width
-                height: window.height/2
+                height: window.height/3
             }
         }
 
         Rectangle {
             color: "#c31c4a"
             implicitWidth: window.width
-            implicitHeight: window.height/2
+            implicitHeight: (window.height/3) * 2
 
             GridLayout {
                 id: gridLayout
@@ -214,39 +215,17 @@ ApplicationWindow {
                     }
                 }
 
-                ColumnLayout {
-                    spacing: 0
-                    Layout.row: 1
-                    Layout.column: 2
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-
-                    ImButton {
-                        id: writebutton
-                        text: qsTr("WRITE")
-                        Layout.bottomMargin: 25
-                        Layout.minimumHeight: 40
-                        Layout.fillWidth: true
-                        Accessible.ignored: ospopup.visible || dstpopup.visible || hwpopup.visible
-                        Accessible.description: qsTr("Select this button to start writing the image")
-                        enabled: false
-                        onClicked: {
-                            if (!imageWriter.readyToWrite()) {
-                                return
-                            }
-
-                            if (!optionspopup.initialized && imageWriter.imageSupportsCustomization() && imageWriter.hasSavedCustomizationSettings()) {
-                                usesavedsettingspopup.openPopup()
-                            } else {
-                                confirmwritepopup.askForConfirmation()
-                            }
-                        }
-                    }
-                }
+                // ColumnLayout {
+                //     spacing: 0
+                //     Layout.row: 1
+                //     Layout.column: 2
+                //     Layout.fillWidth: true
+                //     Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                // }
 
                 ColumnLayout {
                     id: columnLayout3
-                    Layout.columnSpan: 2
+                    Layout.columnSpan: 3
                     Layout.row: 1
                     Layout.column: 0
                     Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
@@ -275,6 +254,7 @@ ApplicationWindow {
 
                     ImButton {
                         Layout.bottomMargin: 25
+                        Layout.minimumHeight: 40
                         padding: 5
                         id: cancelwritebutton
                         text: qsTr("CANCEL WRITE")
@@ -288,6 +268,7 @@ ApplicationWindow {
                     }
                     ImButton {
                         Layout.bottomMargin: 25
+                        Layout.minimumHeight: 40
                         padding: 5
                         id: cancelverifybutton
                         text: qsTr("CANCEL VERIFY")
@@ -312,6 +293,27 @@ ApplicationWindow {
                         contentItem: Image {
                             source: "icons/ic_cog_red.svg"
                             fillMode: Image.PreserveAspectFit
+                        }
+                    }
+                    ImButton {
+                        id: writebutton
+                        text: qsTr("WRITE")
+                        Layout.bottomMargin: 25
+                        Layout.minimumHeight: 40
+                        Layout.fillWidth: true
+                        Accessible.ignored: ospopup.visible || dstpopup.visible || hwpopup.visible
+                        Accessible.description: qsTr("Select this button to start writing the image")
+                        enabled: false
+                        onClicked: {
+                            if (!imageWriter.readyToWrite()) {
+                                return
+                            }
+
+                            if (!optionspopup.initialized && imageWriter.imageSupportsCustomization() && imageWriter.hasSavedCustomizationSettings()) {
+                                usesavedsettingspopup.openPopup()
+                            } else {
+                                confirmwritepopup.askForConfirmation()
+                            }
                         }
                     }
                 }
@@ -1138,6 +1140,7 @@ ApplicationWindow {
             progressBar.Material.accent = "#ffffff"
             osbutton.enabled = false
             dstbutton.enabled = false
+            hwbutton.ebaled = false
             imageWriter.setVerifyEnabled(true)
             imageWriter.startWrite()
         }
@@ -1259,6 +1262,7 @@ ApplicationWindow {
         customizebutton.visible = imageWriter.imageSupportsCustomization()
         osbutton.enabled = true
         dstbutton.enabled = true
+        hwbutton.enabled = true
         writebutton.visible = true
         writebutton.enabled = imageWriter.readyToWrite()
         cancelwritebutton.visible = false
