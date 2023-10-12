@@ -324,7 +324,7 @@
     <message>
         <location filename="../OptionsPopup.qml" line="52"/>
         <source>Image customization options</source>
-        <translation>カスタマイズオプション</translation>
+        <translation>イメージカスタマイズオプション</translation>
     </message>
     <message>
         <location filename="../OptionsPopup.qml" line="57"/>
