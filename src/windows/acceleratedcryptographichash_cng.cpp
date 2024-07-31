@@ -9,6 +9,7 @@
 
 #include <windows.h>
 #include <bcrypt.h>
+#include <QDebug>
 
 #define NT_SUCCESS(Status)          (((NTSTATUS)(Status)) >= 0)
 
@@ -16,7 +17,7 @@
 
 struct AcceleratedCryptographicHash::impl {
     explicit impl(QCryptographicHash::Algorithm algo) {
-        if (method != QCryptographicHash::Sha256)
+        if (algo != QCryptographicHash::Sha256)
             throw std::runtime_error("Only sha256 implemented");
 
         //open an algorithm handle
@@ -27,7 +28,8 @@ struct AcceleratedCryptographicHash::impl {
                                                     0)))
         {
             qDebug() << "BCryptOpenAlgorithmProvider returned Error " << status;
-            goto Cleanup;
+            cleanup();
+            return;
         }
 
         //calculate the size of the buffer to hold the hash object
@@ -40,7 +42,8 @@ struct AcceleratedCryptographicHash::impl {
                                             0)))
         {
             qDebug() <<  "BCryptGetProperty returned Error " << status;
-            goto Cleanup;
+            cleanup();
+            return;
         }
 
         //allocate the hash object on the heap
@@ -48,7 +51,8 @@ struct AcceleratedCryptographicHash::impl {
         if(NULL == pbHashObject)
         {
             qDebug() <<  "memory allocation failed";
-            goto Cleanup;
+            cleanup();
+            return;
         }
 
     //calculate the length of the hash
@@ -61,7 +65,8 @@ struct AcceleratedCryptographicHash::impl {
                                             0)))
         {
             qDebug() << "BCryptGetProperty returned Error " << status;
-            goto Cleanup;
+            cleanup();
+            return;
         }
 
         //allocate the hash buffer on the heap
@@ -90,7 +95,7 @@ struct AcceleratedCryptographicHash::impl {
     }
 
     ~impl() {
-        cleanup()
+        cleanup();
     }
 
     void cleanup() {
@@ -125,7 +130,8 @@ struct AcceleratedCryptographicHash::impl {
                                             0)))
         {
             qDebug() << "BCryptHashData returned Error " << status;
-            goto Cleanup;
+            cleanup();
+            return;
         }
     }
 
@@ -143,11 +149,11 @@ struct AcceleratedCryptographicHash::impl {
                                             0)))
         {
             qDebug() << "BCryptFinishHash returned Error " << status;
-            cleanup()
+            cleanup();
             return {};
         } else {
             // No cleanup required, as the dtor of this class will do so.
-            auto returnArray = QByteArray(pbHash, cbHash);
+            auto returnArray = QByteArray(reinterpret_cast<char *>(pbHash), cbHash);
             return returnArray;
         }
     }

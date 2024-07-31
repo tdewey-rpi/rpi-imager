@@ -185,15 +185,15 @@ elseif (WIN32)
         windows/winwlancredentials.h
         windows/winwlancredentials.cpp
     )
-    set(DEPENDENCIES windows/rpi-imager.rc wlanapi_delayed.lib)
-    set(EXTRALIBS setupapi ${CMAKE_CURRENT_BINARY_DIR}/wlanapi_delayed.lib Bcrypt.dll)
-    add_custom_command(
-        OUTPUT wlanapi_delayed.lib
-        COMMAND ${CMAKE_DLLTOOL} --input-def "${CMAKE_CURRENT_SOURCE_DIR}/windows/wlanapi.def"
-                --output-delaylib "wlanapi_delayed.lib" --dllname "wlanapi.dll"
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/windows/wlanapi.def
-        VERBATIM
-    )
+    set(DEPENDENCIES windows/rpi-imager.rc)
+    set(EXTRALIBS setupapi wlanapi Bcrypt.dll)
+    # add_custom_command(
+    #     OUTPUT wlanapi_delayed.lib
+    #     COMMAND ${CMAKE_DLLTOOL} --input-def "${CMAKE_CURRENT_SOURCE_DIR}/windows/wlanapi.def"
+    #             --output-delaylib "wlanapi_delayed.lib" --dllname "wlanapi.dll"
+    #     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/windows/wlanapi.def
+    #     VERBATIM
+    # )
 endif()
 
 include_directories(BEFORE .)
@@ -308,23 +308,6 @@ if (WIN32)
         POST_BUILD
         COMMAND ${CMAKE_STRIP} "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.exe")
 
-    # Code signing
-    find_program(SIGNTOOL "signtool.exe" PATHS
-        "c:/Program Files (x86)/Microsoft SDKs/ClickOnce/SignTool"
-        "c:/Program Files (x86)/Windows Kits/10/bin/10.0.22621.0/x64")
-    if (NOT SIGNTOOL)
-        message(FATAL_ERROR "Unable to locate signtool.exe used for code signing")
-    endif()
-    add_definitions(-DSIGNTOOL="${SIGNTOOL}")
-
-    add_custom_command(TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND "${SIGNTOOL}" sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.exe")
-
-    add_custom_command(TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND "${SIGNTOOL}" sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a "${CMAKE_BINARY_DIR}/dependencies/fat32format/fat32format.exe")
-
     # Windeploy
     find_program(WINDEPLOYQT "windeployqt.exe" PATHS "${${QT}_DIR}/../../../bin")
     if (NOT WINDEPLOYQT)
@@ -347,7 +330,7 @@ if (WIN32)
 
     add_custom_command(TARGET ${PROJECT_NAME}
         POST_BUILD
-        COMMAND "${WINDEPLOYQT}" --no-translations --no-webkit2 --no-opengl-sw --angle --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/deploy/rpi-imager.exe")
+        COMMAND "${WINDEPLOYQT}" --no-translations --no-opengl-sw --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/deploy/rpi-imager.exe")
 
     # Remove excess files
     add_custom_command(TARGET ${PROJECT_NAME}
