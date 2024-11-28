@@ -34,6 +34,10 @@ if (APPLE)
     set(IMAGER_NOTARIZE_KEYCHAIN_PROFILE "" CACHE STRING "The name of the Keychain item containing your notarization credentials")
 endif(APPLE)
 
+# Use host gnuTLS, as this may contain adaptations for the host operating system we can't reasonably package.
+find_package(GnuTLS REQUIRED)
+add_definitions(-DHAVE_GNUTLS)
+
 ## Preferentially build the bundled code. Full vendoring is to follow in a later version.
 
 # Bundled code will occasionally use identical options - eg, BUILD_TESTING.
@@ -122,6 +126,7 @@ set(CMAKE_CURL_INCLUDES)
 set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
 set(BUILD_LIBCURL_DOCS OFF CACHE BOOL "" FORCE)
 set(ENABLE_CURL_MANUAL OFF CACHE BOOL "" FORCE)
+set(CURL_USE_PKGCONFIG OFF)
 set(CURL_USE_LIBPSL OFF)
 set(CURL_USE_LIBSSH2 OFF)
 set(CURL_DISABLE_ALTSVC ON)
@@ -144,23 +149,12 @@ set(CURL_ZSTD ON)
 set(CURL_ENABLE_EXPORT_TARGET OFF CACHE BOOL "" FORCE)
 set(CURL_DISABLE_INSTALL ON)
 if (APPLE)
-    # TODO: SecureTransport is a deprecated API in macOS, supporting
-    #       only up to TLS v1.2. cURL has not implemented the replacement,
-    #       Network.framework, and so we will need to select an alternative.
-    #       Best recommendation: Libressl, as used by Apple in the curl binary
-    #       on macOS.
-    set(CURL_USE_SECTRANSP ON)
-    set(CURL_DEFAULT_SSL_BACKEND "secure-transport")
     set(USE_APPLE_IDN ON)
-else()
-    if (WIN32)
-        set(CURL_USE_SCHANNEL ON)
-        set(CURL_DEFAULT_SSL_BACKEND "schannel")
-    else ()
-        set(CURL_USE_GNUTLS ON)
-        set(CURL_DEFAULT_SSL_BACKEND "gnutls")
-    endif(WIN32)
+    set(CURL_USE_SECTRANSP OFF)
 endif(APPLE)
+
+set(CURL_USE_GNUTLS ON)
+set(CURL_DEFAULT_SSL_BACKEND "gnutls")
 
 add_subdirectory(dependencies/curl-8.11.0)
 set(CURL_FOUND true)
@@ -177,7 +171,7 @@ set(HEADERS config.h imagewriter.h networkaccessmanagerfactory.h nan.h drivelist
 if (APPLE)
     set_source_files_properties("icons/rpi-imager.icns" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
     set(PLATFORM_SOURCES
-        mac/acceleratedcryptographichash_commoncrypto.cpp
+        linux/acceleratedcryptographichash_gnutls.cpp
         mac/macfile.cpp
         mac/macfile.h
         dependencies/mountutils/src/darwin/functions.cpp
@@ -189,7 +183,6 @@ if (APPLE)
     set(DEPENDENCIES  icons/rpi-imager.icns)
     enable_language(OBJC C)
 elseif (UNIX)
-    find_package(GnuTLS REQUIRED)
     set(PLATFORM_SOURCES
         dependencies/mountutils/src/linux/functions.cpp
         linux/linuxdrivelist.cpp
@@ -199,12 +192,10 @@ elseif (UNIX)
         linux/stpanalyzer.cpp
         linux/acceleratedcryptographichash_gnutls.cpp
     )
-    set(EXTRALIBS ${EXTRALIBS} GnuTLS::GnuTLS idn2 nettle)
     set(DEPENDENCIES "")
-    add_definitions(-DHAVE_GNUTLS)
 elseif (WIN32)
     set(PLATFORM_SOURCES
-        windows/acceleratedcryptographichash_cng.cpp
+        linux/acceleratedcryptographichash_gnutls.cpp
         dependencies/mountutils/src/windows/functions.cpp
         dependencies/drivelist/src/windows/list.cpp
         windows/winfile.cpp
@@ -213,7 +204,7 @@ elseif (WIN32)
         windows/winwlancredentials.cpp
     )
     set(DEPENDENCIES windows/rpi-imager.rc)
-    set(EXTRALIBS setupapi wlanapi Bcrypt.dll)
+    set(EXTRALIBS setupapi wlanapi)
 endif()
 
 include_directories(BEFORE .)
@@ -502,5 +493,6 @@ else()
     install(FILES "${CMAKE_CURRENT_LIST_DIR}/../debian/rpi-imager.metainfo.xml" DESTINATION share/metainfo)
 endif()
 
-include_directories(${CURL_INCLUDE_DIR} ${LibArchive_INCLUDE_DIR} ${LIBLZMA_INCLUDE_DIRS} ${LIBDRM_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${ZSTD_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} PRIVATE ${QT}::Core ${QT}::Quick ${QT}::Svg ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ${ZSTD_LIBRARIES} ${ZLIB_LIBRARIES} ${LIBLZMA_LIBRARIES} ${LIBDRM_LIBRARIES} ${ATOMIC_LIBRARY} ${EXTRALIBS})
+include_directories(${CURL_INCLUDE_DIR} ${LibArchive_INCLUDE_DIR} ${LIBLZMA_INCLUDE_DIRS} ${LIBDRM_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${ZSTD_INCLUDE_DIR} ${GNUTLS_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${QT}::Core ${QT}::Quick ${QT}::Svg ${NETTLE_LIBRARY} ${GNUTLS_LIBRARIES} ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ${ZSTD_LIBRARIES} ${ZLIB_LIBRARIES} ${LIBLZMA_LIBRARIES} ${LIBDRM_LIBRARIES} ${ATOMIC_LIBRARY} ${EXTRALIBS})
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${GNUTLS_DEFINITIONS})
