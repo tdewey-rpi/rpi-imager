@@ -185,7 +185,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 #endif
     app.setOrganizationName("Raspberry Pi");
-    app.setOrganizationDomain("raspberrypi.org");
+    app.setOrganizationDomain("raspberrypi.com");
     app.setApplicationName("Imager");
     app.setWindowIcon(QIcon(":/icons/rpi-imager.ico"));
     ImageWriter imageWriter;
