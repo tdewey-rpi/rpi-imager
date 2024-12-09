@@ -7,9 +7,7 @@
  */
 
 #include <QObject>
-#ifdef Q_OS_WIN
 #include <windows.h>
-#endif
 
 class PowerSaveBlocker : public QObject
 {
@@ -24,10 +22,7 @@ signals:
 
 protected:
     bool _stayingAwake;
-
-#ifdef Q_OS_WIN
     HANDLE _powerRequest;
-#endif
 };
 
 #endif // POWERSAVEBLOCKER_H

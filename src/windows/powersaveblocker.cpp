@@ -10,6 +10,7 @@
 PowerSaveBlocker::PowerSaveBlocker(QObject *parent) :
     QObject(parent), _stayingAwake(false)
 {
+    _powerRequest = INVALID_HANDLE_VALUE
 }
 
 PowerSaveBlocker::~PowerSaveBlocker()
@@ -23,7 +24,6 @@ void PowerSaveBlocker::applyBlock(const QString &reason)
     if (_stayingAwake)
         return;
 
-#ifdef Q_OS_WIN
     REASON_CONTEXT rc;
     std::wstring wreason = reason.toStdWString();
     rc.Version = POWER_REQUEST_CONTEXT_VERSION;
@@ -42,7 +42,6 @@ void PowerSaveBlocker::applyBlock(const QString &reason)
     {
         qDebug() << "Error running PowerSetRequest():" << GetLastError();
     }
-#endif
 }
 
 void PowerSaveBlocker::removeBlock()
@@ -50,8 +49,6 @@ void PowerSaveBlocker::removeBlock()
     if (!_stayingAwake)
         return;
 
-#ifdef Q_OS_WIN
-    PowerClearRequest(_powerRequest, PowerRequestDisplayRequired);
+    _stayingAwake = PowerClearRequest(_powerRequest, PowerRequestDisplayRequired);
     CloseHandle(_powerRequest);
-#endif
 }
