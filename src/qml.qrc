@@ -1,7 +1,7 @@
 <RCC>
     <qresource prefix="/">
-        <file>main.qml</file>
-        <file>qtquickcontrols2.conf</file>
+        <file>qml/main.qml</file>
+        <file>qml/qtquickcontrols2.conf</file>
         <file>icons/rpi-imager.ico</file>
         <file>fonts/Roboto-Bold.ttf</file>
         <file>fonts/Roboto-Light.ttf</file>
@@ -11,7 +11,7 @@
         <file>icons/ic_sd_storage_40px.svg</file>
         <file>icons/ic_storage_40px.svg</file>
         <file>icons/ic_usb_40px.svg</file>
-        <file>MsgPopup.qml</file>
+        <file>qml/MsgPopup.qml</file>
         <file>icons/use_custom.png</file>
         <file>icons/erase.png</file>
         <file>icons/cat_raspberry_pi_os.png</file>
@@ -20,10 +20,10 @@
         <file>icons/cat_misc_utility_images.png</file>
         <file>icons/cat_media_players.png</file>
         <file>icons/cat_emulation_and_games.png</file>
-        <file>OptionsPopup.qml</file>
+        <file>qml/OptionsPopup.qml</file>
         <file>countries.txt</file>
         <file>timezones.txt</file>
-        <file>UseSavedSettingsPopup.qml</file>
+        <file>qml/UseSavedSettingsPopup.qml</file>
         <file>icons/ic_info_16px.png</file>
         <file>icons/ic_info_12px.png</file>
         <file>keymap-layouts.txt</file>
@@ -33,10 +33,10 @@
         <file>icons/cat_3d_printing.png</file>
         <file>icons/logo_stacked_imager.png</file>
         <file>icons/logo_sxs_imager.png</file>
-        <file>qmlcomponents/ImButton.qml</file>
-        <file>qmlcomponents/ImButtonRed.qml</file>
-        <file>qmlcomponents/ImCheckBox.qml</file>
-        <file>qmlcomponents/ImRadioButton.qml</file>
+        <file>qml/components/ImButton.qml</file>
+        <file>qml/components/ImButtonRed.qml</file>
+        <file>qml/components/ImCheckBox.qml</file>
+        <file>qml/components/ImRadioButton.qml</file>
         <file>icons/cat_digital_signage.png</file>
     </qresource>
 </RCC>
