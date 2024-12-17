@@ -8,6 +8,8 @@ OPTION (ENABLE_TELEMETRY "Enable sending telemetry" ON)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Which macOS architectures to build for")
 
 project(rpi-imager LANGUAGES CXX C)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(IMAGER_VERSION_MAJOR 1)
 set(IMAGER_VERSION_MINOR 9)
 set(IMAGER_VERSION_PATCH 2)
@@ -169,9 +171,30 @@ set(CURL_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/dependencies/curl-8.11.0/include)
 set(CURL_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/dependencies/curl-8.11.0/include)
 
 # Adding headers explicity so they are displayed in Qt Creator
-set(HEADERS config.h imagewriter.h networkaccessmanagerfactory.h nan.h drivelistitem.h drivelistmodel.h drivelistmodelpollthread.h driveformatthread.h powersaveblocker.h cli.h
-    devicewrapper.h devicewrapperblockcacheentry.h devicewrapperpartition.h devicewrapperstructs.h devicewrapperfatpartition.h wlancredentials.h
-    downloadthread.h downloadextractthread.h localfileextractthread.h downloadstatstelemetry.h dependencies/mountutils/src/mountutils.hpp dependencies/sha256crypt/sha256crypt.h)
+set(HEADERS
+    config.h
+    imagewriter.h
+    networkaccessmanagerfactory.h
+    nan.h
+    drivelistitem.h
+    drivelistmodel.h
+    drivelistmodelpollthread.h
+    driveformatthread.h
+    include/powersaveblocker.h
+    cli.h
+    include/devicewrapper.h
+    include/devicewrapperblockcacheentry.h
+    include/devicewrapperpartition.h
+    devicewrapperstructs.h
+    include/devicewrapperfatpartition.h
+    include/wlancredentials.h
+    downloadthread.h
+    downloadextractthread.h
+    localfileextractthread.h
+    downloadstatstelemetry.h
+    dependencies/mountutils/src/mountutils.hpp
+    dependencies/sha256crypt/sha256crypt.h
+)
 
 # Add dependencies
 if (APPLE)
@@ -211,6 +234,7 @@ elseif (WIN32)
         windows/winfile.h
         windows/winwlancredentials.h
         windows/winwlancredentials.cpp
+        windows/powersaveblocker.cpp
     )
     set(DEPENDENCIES windows/rpi-imager.rc)
     set(EXTRALIBS setupapi wlanapi Bcrypt.dll)
@@ -243,10 +267,27 @@ if( IS_BIG_ENDIAN )
     message( FATAL_ERROR "We currently only support 'little endian' CPU architectures" )
 endif( IS_BIG_ENDIAN )
 
-set(SOURCES ${PLATFORM_SOURCES} "main.cpp" "imagewriter.cpp" "networkaccessmanagerfactory.cpp"
-    "drivelistitem.cpp" "drivelistmodel.cpp" "drivelistmodelpollthread.cpp" "downloadthread.cpp" "downloadextractthread.cpp"
-    "devicewrapper.cpp" "devicewrapperblockcacheentry.cpp" "devicewrapperpartition.cpp" "devicewrapperfatpartition.cpp"
-    "driveformatthread.cpp" "localfileextractthread.cpp" "powersaveblocker.cpp" "downloadstatstelemetry.cpp" "qml.qrc" "dependencies/sha256crypt/sha256crypt.c" "cli.cpp")
+set(SOURCES
+    ${PLATFORM_SOURCES}
+    "main.cpp"
+    "imagewriter.cpp"
+    "networkaccessmanagerfactory.cpp"
+    "drivelistitem.cpp"
+    "drivelistmodel.cpp"
+    "drivelistmodelpollthread.cpp"
+    "downloadthread.cpp"
+    "downloadextractthread.cpp"
+    "lib/devicewrapper.cpp"
+    "lib/devicewrapperblockcacheentry.cpp"
+    "lib/devicewrapperpartition.cpp"
+    "lib/devicewrapperfatpartition.cpp"
+    "driveformatthread.cpp"
+    "localfileextractthread.cpp"
+    "downloadstatstelemetry.cpp"
+    "qml.qrc"
+    "dependencies/sha256crypt/sha256crypt.c"
+    "cli.cpp"
+)
 
 find_package(Qt6 6.7 QUIET COMPONENTS Core Quick LinguistTools Svg OPTIONAL_COMPONENTS Widgets DBus WinExtras)
 if (Qt6_FOUND)
@@ -286,10 +327,9 @@ set(SOURCES ${SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/translations.qrc ${QM_FILES})
 
 if (WIN32)
     # Adding WIN32 prevents a console window being opened on Windows
-    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${DEPENDENCIES})
-else()
-    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${DEPENDENCIES})
+    set(WINDOWS_EXECUTABLE WIN32)
 endif()
+add_executable(${PROJECT_NAME} ${WINDOWS_EXECUTABLE} ${SOURCES} ${HEADERS} ${DEPENDENCIES})
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY AUTOMOC ON)
 set_property(TARGET ${PROJECT_NAME} PROPERTY AUTORCC ON)
@@ -498,5 +538,5 @@ else()
     install(FILES "${CMAKE_CURRENT_LIST_DIR}/../debian/rpi-imager.metainfo.xml" DESTINATION share/metainfo)
 endif()
 
-include_directories(${CURL_INCLUDE_DIR} ${LibArchive_INCLUDE_DIR} ${LIBLZMA_INCLUDE_DIRS} ${LIBDRM_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${ZSTD_INCLUDE_DIR})
+include_directories(include ${CURL_INCLUDE_DIR} ${LibArchive_INCLUDE_DIR} ${LIBLZMA_INCLUDE_DIRS} ${LIBDRM_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${ZSTD_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${QT}::Core ${QT}::Quick ${QT}::Svg ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ${ZSTD_LIBRARIES} ${ZLIB_LIBRARIES} ${LIBLZMA_LIBRARIES} ${LIBDRM_LIBRARIES} ${ATOMIC_LIBRARY} ${EXTRALIBS})

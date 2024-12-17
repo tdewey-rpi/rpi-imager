@@ -7,8 +7,8 @@
  * Copyright (C) 2022 Raspberry Pi Ltd
  */
 
-DeviceWrapperFatPartition::DeviceWrapperFatPartition(DeviceWrapper *dw, quint64 partStart, quint64 partLen, QObject *parent)
-    : DeviceWrapperPartition(dw, partStart, partLen, parent)
+DeviceWrapperFatPartition::DeviceWrapperFatPartition(DeviceWrapper *dw, uint64_t partStart, uint64_t partLen)
+    : DeviceWrapperPartition(dw, partStart, partLen)
 {
     union fat_bpb bpb;
 
@@ -57,7 +57,7 @@ DeviceWrapperFatPartition::DeviceWrapperFatPartition(DeviceWrapper *dw, quint64 
     _firstFatStartOffset = bpb.fat16.BPB_RsvdSecCnt * _bytesPerSector;
     for (int i = 0; i < bpb.fat16.BPB_NumFATs; i++)
     {
-        _fatStartOffset.append(_firstFatStartOffset + (i * _fatSize * _bytesPerSector));
+        _fatStartOffset.push_back(_firstFatStartOffset + (i * _fatSize * _bytesPerSector));
     }
 
     if (_type == FAT16)
@@ -74,12 +74,12 @@ DeviceWrapperFatPartition::DeviceWrapperFatPartition(DeviceWrapper *dw, quint64 
 
 uint32_t DeviceWrapperFatPartition::allocateCluster()
 {
-    char sector[_bytesPerSector];
-    int bytesPerEntry = (_type == FAT16 ? 2 : 4);
-    int entriesPerSector = _bytesPerSector/bytesPerEntry;
+    //char sector[_bytesPerSector];
+    std::vector<uint8_t> sector(_bytesPerSector);
+    const int entriesPerSector = _bytesPerSector/(_type == FAT16 ? 2 : 4);
     uint32_t cluster;
-    uint16_t *f16 = (uint16_t *) &sector;
-    uint32_t *f32 = (uint32_t *) &sector;
+    uint16_t *f16 = reinterpret_cast<uint16_t *>(sector.data());
+    uint32_t *f32 = reinterpret_cast<uint32_t *>(sector.data());
 
     seek(_firstFatStartOffset);
 
@@ -143,19 +143,25 @@ void DeviceWrapperFatPartition::setFAT16(uint16_t cluster, uint16_t value)
 
 void DeviceWrapperFatPartition::setFAT32(uint32_t cluster, uint32_t value)
 {
-    uint32_t prev_value, reserved_bits;
+    uint32_t prev_value;
 
     /* Modify all FATs (usually 2) */
     for (auto fatStart : std::as_const(_fatStartOffset))
     {
         /* Spec (p. 16) mentions we must preserve high 4 bits of FAT32 FAT entry when modifiying */
+        std::vector<uint8_t> readBytes(4);
         seek(fatStart + cluster * 4);
-        read( (char *) &prev_value, 4);
-        reserved_bits = prev_value & 0xF0000000;
+        read(readBytes, 4);
+        uint32_t readValue = readBytes[0] << 24 | readBytes[1] << 16 | readBytes[2] << 8 | readBytes [3];
+        auto reserved_bits = readValue & 0xF0000000;
         value |= reserved_bits;
+        readBytes[0] = (readValue & 0xFF000000) >> 24;
+        readBytes[1] = (readValue & 0x00FF0000) >> 16;
+        readBytes[2] = (readValue & 0x0000FF00) >> 8;
+        readBytes[3] = (readValue & 0x000000FF);
 
         seek(fatStart + cluster * 4);
-        write((char *) &value, 4);
+        write(readBytes);
     }
 }
 
@@ -185,9 +191,9 @@ uint32_t DeviceWrapperFatPartition::getFAT(uint32_t cluster)
     }
 }
 
-QList<uint32_t> DeviceWrapperFatPartition::getClusterChain(uint32_t firstCluster)
+std::list<uint32_t> DeviceWrapperFatPartition::getClusterChain(uint32_t firstCluster)
 {
-    QList<uint32_t> list;
+    std::list<uint32_t> list;
     uint32_t cluster = firstCluster;
 
     while (true)
@@ -202,7 +208,7 @@ QList<uint32_t> DeviceWrapperFatPartition::getClusterChain(uint32_t firstCluster
         if (list.contains(cluster))
             throw std::runtime_error("Corrupt file system. Circular references in FAT table");
 
-        list.append(cluster);
+        list.push_back(cluster);
         cluster = getFAT(cluster);
     }
 
@@ -214,30 +220,30 @@ void DeviceWrapperFatPartition::seekCluster(uint32_t cluster)
     seek(_clusterOffset + (cluster-2)*_bytesPerCluster);
 }
 
-bool DeviceWrapperFatPartition::fileExists(const QString &filename)
+bool DeviceWrapperFatPartition::fileExists(const std::string &filename)
 {
     struct dir_entry entry;
     return getDirEntry(filename, &entry);
 }
 
-QByteArray DeviceWrapperFatPartition::readFile(const QString &filename)
+std::vector<uint8_t> DeviceWrapperFatPartition::readFile(const std::string &filename)
 {
     struct dir_entry entry;
 
     if (!getDirEntry(filename, &entry))
-        return QByteArray(); /* File not found */
+        return {}; /* File not found */
 
     uint32_t firstCluster = entry.DIR_FstClusLO;
     if (_type == FAT32)
         firstCluster |= (entry.DIR_FstClusHI << 16);
-    QList<uint32_t> clusterList = getClusterChain(firstCluster);
+    auto clusterList = getClusterChain(firstCluster);
     uint32_t len = entry.DIR_FileSize, pos = 0;
-    QByteArray result(len, 0);
+    std::vector<uint8_t> result(len);
 
-    for (uint32_t cluster : std::as_const(clusterList))
+    for (auto cluster : std::as_const(clusterList))
     {
         seekCluster(cluster);
-        read(result.data()+pos, qMin(_bytesPerCluster, len-pos));
+        read(result.data()+pos, std::min(_bytesPerCluster, len-pos));
 
         pos += _bytesPerCluster;
         if (pos >= len)
@@ -247,12 +253,11 @@ QByteArray DeviceWrapperFatPartition::readFile(const QString &filename)
     return result;
 }
 
-void DeviceWrapperFatPartition::writeFile(const QString &filename, const QByteArray &contents)
+void DeviceWrapperFatPartition::writeFile(const std::string &filename, const std::vector<uint8_t> &contents)
 {
-    QList<uint32_t> clusterList;
-    uint32_t pos = 0;
-    uint32_t firstCluster;
-    int clustersNeeded = (contents.length() + _bytesPerCluster - 1) / _bytesPerCluster;
+    std::list<uint32_t> clusterList;
+    uint32_t pos = 0, firstCluster = 0;
+    int clustersNeeded = (contents.size() + _bytesPerCluster - 1) / _bytesPerCluster;
     struct dir_entry entry;
 
     getDirEntry(filename, &entry, true);
@@ -263,87 +268,88 @@ void DeviceWrapperFatPartition::writeFile(const QString &filename, const QByteAr
     if (firstCluster)
         clusterList = getClusterChain(firstCluster);
 
-    if (clusterList.length() < clustersNeeded)
+    if (clusterList.size() < clustersNeeded)
     {
         /* We need to allocate more clusters */
         uint32_t lastCluster = 0;
-        int extraClustersNeeded = clustersNeeded - clusterList.length();
+        int extraClustersNeeded = clustersNeeded - clusterList.size();
 
-        if (!clusterList.isEmpty())
-            lastCluster = clusterList.last();
+        if (!clusterList.empty())
+            lastCluster = clusterList.back();
 
         for (int i = 0; i < extraClustersNeeded; i++)
         {
             lastCluster = allocateCluster(lastCluster);
-            clusterList.append(lastCluster);
+            clusterList.push_back(lastCluster);
         }
     }
-    else if (clusterList.length() > clustersNeeded)
+    else if (clusterList.size() > clustersNeeded)
     {
         /* We need to remove excess clusters */
-        int clustersToRemove = clusterList.length() - clustersNeeded;
+        int clustersToRemove = clusterList.size() - clustersNeeded;
         uint32_t clusterToRemove = 0;
-        QByteArray zeroes(_bytesPerCluster, 0);
+        std::vector<uint8_t> zeroes(_bytesPerCluster, 0);
 
         for (int i=0; i < clustersToRemove; i++)
         {
-            clusterToRemove = clusterList.takeLast();
+            clusterToRemove = clusterList.back();
 
             /* Zero out previous data in excess clusters,
                just in case someone wants to take a disk image later */
             seekCluster(clusterToRemove);
-            write(zeroes.data(), zeroes.length());
+            write(zeroes.data(), zeroes.size());
 
             /* Mark cluster available again in FAT */
             setFAT(clusterToRemove, 0);
+            clusterList.pop_back();
         }
         updateFSinfo(clustersToRemove, clusterToRemove);
 
-        if (!clusterList.isEmpty())
+        if (!clusterList.empty())
         {
             if (_type == FAT16)
-                setFAT16(clusterList.last(), 0xFFFF);
+                setFAT16(clusterList.back(), 0xFFFF);
             else
-                setFAT32(clusterList.last(), 0xFFFFFFF);
+                setFAT32(clusterList.back(), 0xFFFFFFF);
         }
     }
 
-    //qDebug() << "First cluster:" << firstCluster << "Clusters:" << clusterList;
+    //std::cout << "First cluster:" << firstCluster << "Clusters:" << clusterList << std::endl;
 
     /* Write file data */
     for (uint32_t cluster : std::as_const(clusterList))
     {
         seekCluster(cluster);
-        write(contents.data()+pos, qMin((qsizetype)_bytesPerCluster, (qsizetype)(contents.length()-pos)));
+        write(contents.data()+pos, std::min(_bytesPerCluster, (contents.size()-pos)));
 
         pos += _bytesPerCluster;
-        if (pos >= contents.length())
+        if (pos >= contents.size())
             break;
     }
 
-    if (clustersNeeded && contents.length() % _bytesPerCluster)
+    if (clustersNeeded && contents.size() % _bytesPerCluster)
     {
         /* Zero out last cluster tip */
-        uint32_t extraBytesAtEndOfCluster = _bytesPerCluster - (contents.length() % _bytesPerCluster);
+        uint32_t extraBytesAtEndOfCluster = _bytesPerCluster - (contents.size() % _bytesPerCluster);
         if (extraBytesAtEndOfCluster)
         {
-            QByteArray zeroes(extraBytesAtEndOfCluster, 0);
-            write(zeroes.data(), zeroes.length());
+            std::vector<uint8_t> zeroes(extraBytesAtEndOfCluster, 0);
+            write(zeroes.data(), zeroes.size());
         }
     }
 
     /* Update directory entry */
-    if (clusterList.isEmpty())
+    if (clusterList.empty())
         firstCluster = (_type == FAT16 ? 0xFFFF : 0xFFFFFFF);
     else
-        firstCluster = clusterList.first();
+        firstCluster = clusterList.front();
 
     entry.DIR_FstClusLO = (firstCluster & 0xFFFF);
     entry.DIR_FstClusHI = (firstCluster >> 16);
-    entry.DIR_WrtDate = QDateToFATdate( QDate::currentDate() );
-    entry.DIR_WrtTime = QTimeToFATtime( QTime::currentTime() );
+    entry.DIR_WrtDate = DateToFATdate( QDate::currentDate() );
+    entry.DIR_WrtTime = TimeToFATtime( QTime::currentTime() );
     entry.DIR_LstAccDate = entry.DIR_WrtDate;
-    entry.DIR_FileSize = contents.length();
+    entry.DIR_FileSize = contents.size();
     updateDirEntry(&entry);
 }
 
@@ -358,11 +364,14 @@ inline QByteArray _dirEntryToShortName(struct dir_entry *entry)
         return base+"."+ext;
 }
 
-bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct dir_entry *entry, bool createIfNotExist)
+bool DeviceWrapperFatPartition::getDirEntry(const std::string &longFilename, struct dir_entry *entry, bool createIfNotExist)
 {
-    QString filenameRead, longFilenameLower = longFilename.toLower();
+    std::string filenameRead, longFilenameLower = longFilename;
 
-    if (longFilename.isEmpty())
+    std::transform(longFilenameLower.begin(), longFilenameLower.end(), longFilename.begin(),
+        [](unsigned char c) {return std::tolower(c); });
+
+    if (longFilename.empty())
         throw std::runtime_error("Filename cannot not be empty");
 
     openDir();
@@ -377,7 +386,7 @@ bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct 
             memcpy(lnamePartStr, l->LDIR_Name1, 10);
             memcpy(lnamePartStr+10, l->LDIR_Name2, 12);
             memcpy(lnamePartStr+22, l->LDIR_Name3, 4);
-            QString lnamePart( (QChar *) lnamePartStr, 13);
+            std::string lnamePart( lnamePartStr, 13);
             filenameRead = lnamePart + filenameRead;
         }
         else
@@ -401,13 +410,13 @@ bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct 
 
     if (createIfNotExist)
     {
-        QByteArray shortFilename;
+        std::vector<uint8_t> shortFilename;
         uint8_t shortFileNameChecksum = 0;
         struct longfn_entry longEntry;
 
         if (longFilename.count(".") == 1)
         {
-            QList<QByteArray> fnParts = longFilename.toLatin1().toUpper().split('.');
+            std::list<std::vector<uint8_t>> fnParts = longFilename.toLatin1().toUpper().split('.');
             shortFilename = fnParts[0].leftJustified(8, ' ', true)+fnParts[1].leftJustified(3, ' ', true);
         }
         else
@@ -438,10 +447,11 @@ bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct 
             shortFileNameChecksum = ((shortFileNameChecksum & 1) ? 0x80 : 0) + (shortFileNameChecksum >> 1) + shortFilename[i];
         }
 
-        QString longFilenameWithNull = longFilename + QChar::Null;
+        std::vector<uint8_t> longFilenameWithNull;
+        longFilenameWithNull.reserve(longFilename.size() + 1);
         char *longFilenameStr = (char *) longFilenameWithNull.data();
-        int lfnFragments = (longFilenameWithNull.length()+12)/13;
-        int lenBytes = longFilenameWithNull.length()*2;
+        int lfnFragments = (longFilenameWithNull.size()+12)/13;
+        int lenBytes = longFilenameWithNull.size()*2;
 
         /* long file name directory entries are added in reverse order before the 8.3 entry */
         for (int i = lfnFragments; i > 0; i--)
@@ -454,26 +464,29 @@ bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct 
             longEntry.LDIR_Type = 0;
 
             size_t start = (i-1) * 26;
-            memcpy(longEntry.LDIR_Name1, longFilenameStr+start, qMin(lenBytes-start, sizeof(longEntry.LDIR_Name1)));
+            memcpy(longEntry.LDIR_Name1, longFilenameStr+start, std::min(lenBytes-start, sizeof(longEntry.LDIR_Name1)));
             start += sizeof(longEntry.LDIR_Name1);
             if (start < lenBytes)
             {
-                memcpy(longEntry.LDIR_Name2, longFilenameStr+start, qMin(lenBytes-start, sizeof(longEntry.LDIR_Name2)));
+                memcpy(longEntry.LDIR_Name2, longFilenameStr+start, std::min(lenBytes-start, sizeof(longEntry.LDIR_Name2)));
                 start += sizeof(longEntry.LDIR_Name2);
                 if (start < lenBytes)
                 {
-                    memcpy(longEntry.LDIR_Name3, longFilenameStr+start, qMin(lenBytes-start, sizeof(longEntry.LDIR_Name3)));
+                    memcpy(longEntry.LDIR_Name3, longFilenameStr+start, std::min(lenBytes-start, sizeof(longEntry.LDIR_Name3)));
                 }
             }
 
             writeDirEntryAtCurrentPos((struct dir_entry *) &longEntry);
         }
 
+        const std::chrono::zoned_time cur_time{ std::chrono::current_zone(),
+                                            std::chrono::system_clock::now() };
+
         memset(entry, 0, sizeof(*entry));
         memcpy(entry->DIR_Name, shortFilename.data(), sizeof(entry->DIR_Name));
         entry->DIR_Attr = ATTR_ARCHIVE;
-        entry->DIR_CrtDate = QDateToFATdate( QDate::currentDate() );
-        entry->DIR_CrtTime = QTimeToFATtime( QTime::currentTime() );
+        entry->DIR_CrtDate = DateToFATdate(cur_time);
+        entry->DIR_CrtTime = TimeToFATtime(cur_time);
 
         writeDirEntryAtCurrentPos(entry);
 
@@ -485,7 +498,7 @@ bool DeviceWrapperFatPartition::getDirEntry(const QString &longFilename, struct 
     return false;
 }
 
-bool DeviceWrapperFatPartition::dirNameExists(const QByteArray dirname)
+bool DeviceWrapperFatPartition::dirNameExists(const std::string &dirname)
 {
     struct dir_entry entry;
 
@@ -493,7 +506,7 @@ bool DeviceWrapperFatPartition::dirNameExists(const QByteArray dirname)
     while (readDir(&entry))
     {
         if (!(entry.DIR_Attr & ATTR_LONG_NAME)
-                && dirname == QByteArray((char *) entry.DIR_Name, sizeof(entry.DIR_Name)))
+                && dirname == std::string((char *) entry.DIR_Name, sizeof(entry.DIR_Name)))
         {
             return true;
         }
@@ -546,14 +559,14 @@ void DeviceWrapperFatPartition::writeDirEntryAtCurrentPos(struct dir_entry *dirE
 
             if (_currentDirClusters.contains(nextCluster))
                 throw std::runtime_error("Circular cluster references in FAT32 directory detected");
-            _currentDirClusters.append(nextCluster);
+            _currentDirClusters.push_back(nextCluster);
 
             _fat32_currentRootDirCluster = nextCluster;
             seekCluster(_fat32_currentRootDirCluster);
 
             /* Zero out entire new cluster, as fsck.fat does not stop reading entries at end-of-directory marker */
-            QByteArray zeroes(_bytesPerCluster, 0);
-            write(zeroes.data(), zeroes.length() );
+            std::vector<uint8_t> zeroes(_bytesPerCluster, 0);
+            write(zeroes.data(), zeroes.size() );
             seekCluster(_fat32_currentRootDirCluster);
         }
     }
@@ -577,7 +590,7 @@ void DeviceWrapperFatPartition::openDir()
         /* Keep track of directory clusters we seeked to, to be able
            to detect circular references */
         _currentDirClusters.clear();
-        _currentDirClusters.append(_fat32_currentRootDirCluster);
+        _currentDirClusters.push_back(_fat32_currentRootDirCluster);
     }
 }
 
@@ -611,7 +624,7 @@ bool DeviceWrapperFatPartition::readDir(struct dir_entry *result)
 
             if (_currentDirClusters.contains(nextCluster))
                 throw std::runtime_error("Circular cluster references in FAT32 directory detected");
-            _currentDirClusters.append(nextCluster);
+            _currentDirClusters.push_back(nextCluster);
             _fat32_currentRootDirCluster = nextCluster;
             seekCluster(_fat32_currentRootDirCluster);
         }
@@ -658,12 +671,12 @@ void DeviceWrapperFatPartition::updateFSinfo(int deltaClusters, uint32_t nextFre
     write((char *) &fsinfo, sizeof(fsinfo));
 }
 
-uint16_t DeviceWrapperFatPartition::QTimeToFATtime(const QTime &time)
+uint16_t DeviceWrapperFatPartition::TimeToFATtime(const std::chrono::zoned_time &time)
 {
     return (time.hour() << 11) | (time.minute() << 5) | (time.second() >> 1) ;
 }
 
-uint16_t DeviceWrapperFatPartition::QDateToFATdate(const QDate &date)
+uint16_t DeviceWrapperFatPartition::DateToFATdate(const std::chrono::zoned_time &date)
 {
     return ((date.year() - 1980) << 9) | (date.month() << 5) | date.day();
 }

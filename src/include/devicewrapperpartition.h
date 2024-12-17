@@ -3,30 +3,28 @@
 
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2022 Raspberry Pi Ltd
+ * Copyright (C) 2022-2025 Raspberry Pi Ltd
  */
 
-#include <QObject>
+#include <vector>
+
+#include <cstddef>
+#include <cstdint>
 
 class DeviceWrapper;
 
-class DeviceWrapperPartition : public QObject
-{
-    Q_OBJECT
+class DeviceWrapperPartition {
 public:
-    explicit DeviceWrapperPartition(DeviceWrapper *dw, quint64 partStart, quint64 partLen, QObject *parent = nullptr);
+    explicit DeviceWrapperPartition(DeviceWrapper *dw, std::size_t partStart, std::size_t partLen);
     virtual ~DeviceWrapperPartition();
-    void read(char *data, qint64 size);
-    void seek(qint64 pos);
-    qint64 pos() const;
-    void write(const char *data, qint64 size);
+    void read(std::vector<uint8_t> &data, std::size_t size);
+    void seek(std::size_t pos);
+    std::size_t pos() const;
+    void write(const std::vector<uint8_t> &data);
 
 protected:
     DeviceWrapper *_dw;
-    quint64 _partStart, _partLen, _partEnd, _offset;
-
-signals:
-
+    std::size_t _partStart, _partLen, _partEnd, _offset;
 };
 
 #endif // DEVICEWRAPPERPARTITION_H

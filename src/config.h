@@ -17,7 +17,7 @@
 #define TELEMETRY_URL                     "https://rpi-imager-stats.raspberrypi.com/downloads"
 
 /* Hash algorithm for verifying (uncompressed image) checksum */
-#define OSLIST_HASH_ALGORITHM             QCryptographicHash::Sha256
+#define OSLIST_HASH_ALGORITHM             AcceleratedCryptographicHash::Algorithm::SHA256
 
 /* Update progressbar every 0.1 second */
 #define PROGRESS_UPDATE_INTERVAL          100

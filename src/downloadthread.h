@@ -170,7 +170,8 @@ protected:
     std::atomic<std::uint64_t> _lastDlTotal, _lastDlNow, _verifyTotal, _lastVerifyNow, _bytesWritten;
     std::uint64_t _lastFailureOffset;
     qint64 _sectorsStart;
-    QByteArray _url, _useragent, _buf, _filename, _lastError, _expectedHash, _config, _cmdline, _firstrun, _cloudinit, _cloudinitNetwork, _initFormat;
+    QByteArray _url, _useragent, _buf, _filename, _lastError, _config, _cmdline, _firstrun, _cloudinit, _cloudinitNetwork, _initFormat;
+    std::array<uint8_t, 32> _expectedHash;
     char *_firstBlock;
     size_t _firstBlockSize;
     static QByteArray _proxy;

@@ -1,16 +1,19 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2022 Raspberry Pi Ltd
+ * Copyright (C) 2022-2025 Raspberry Pi Ltd
  */
+
+#include <iostream>
+
+#include <cstdint>
 
 #include "devicewrapper.h"
 #include "devicewrapperblockcacheentry.h"
 #include "devicewrapperstructs.h"
 #include "devicewrapperfatpartition.h"
-#include <QDebug>
 
-DeviceWrapper::DeviceWrapper(DeviceWrapperFile *file, QObject *parent)
-    : QObject(parent), _dirty(false), _file(file)
+DeviceWrapper::DeviceWrapper(DeviceWrapperFile *file)
+    : _dirty(false), _file(file)
 {
 
 }
@@ -20,7 +23,7 @@ DeviceWrapper::~DeviceWrapper()
     sync();
 }
 
-void DeviceWrapper::_seekToBlock(quint64 blockNr)
+void DeviceWrapper::_seekToBlock(uint64_t blockNr)
 {
     if (!_file->seek(blockNr*4096))
     {
@@ -33,37 +36,34 @@ void DeviceWrapper::sync()
     if (!_dirty)
         return;
 
-    const auto blockNrs = _blockcache.keys();
-    for (auto blockNr : blockNrs)
+    for (auto&& block : _blockcache)
     {
-        if (blockNr == 0)
+        if (block.first == 0)
             continue; /* Save writing first block with MBR for last */
 
-        auto block = _blockcache.value(blockNr);
-
-        if (!block->dirty)
+        if (!block.second->dirty)
             continue;
 
-        _seekToBlock(blockNr);
-        if (_file->write(block->block, 4096) != 4096)
+        _seekToBlock(block.first);
+        if (_file->write(block.second->block, 4096) != 4096)
         {
-            std::string errmsg = "Error writing to device: "+_file->errorString().toStdString();
+            std::string errmsg = "Error writing to device";
             throw std::runtime_error(errmsg);
         }
-        block->dirty = false;
+        block.second->dirty = false;
     }
 
     if (_blockcache.contains(0))
     {
         /* Write first block with MBR */
-        auto block = _blockcache.value(0);
+        auto block = _blockcache.at(0);
 
         if (block->dirty)
         {
             _seekToBlock(0);
             if (_file->write(block->block, 4096) != 4096)
             {
-                std::string errmsg = "Error writing MBR to device: "+_file->errorString().toStdString();
+                std::string errmsg = "Error writing MBR to device";
                 throw std::runtime_error(errmsg);
             }
             block->dirty = false;
@@ -73,13 +73,13 @@ void DeviceWrapper::sync()
     _dirty = false;
 }
 
-void DeviceWrapper::_readIntoBlockCacheIfNeeded(quint64 offset, quint64 size)
+void DeviceWrapper::_readIntoBlockCacheIfNeeded(uint64_t offset, uint64_t size)
 {
     if (!size)
         return;
 
-    quint64 firstBlock = offset/4096;
-    quint64 lastBlock = (offset+size)/4096;
+    uint64_t firstBlock = offset/4096;
+    uint64_t lastBlock = (offset+size)/4096;
 
     for (auto i = firstBlock; i <= lastBlock; i++)
     {
@@ -87,31 +87,31 @@ void DeviceWrapper::_readIntoBlockCacheIfNeeded(quint64 offset, quint64 size)
         {
             _seekToBlock(i);
 
-            auto cacheEntry = new DeviceWrapperBlockCacheEntry(this);
+            auto cacheEntry = new DeviceWrapperBlockCacheEntry();
             int bytesRead = _file->read(cacheEntry->block, 4096);
             if (bytesRead != 4096)
             {
-                std::string errmsg = "Error reading from device: "+_file->errorString().toStdString();
+                std::string errmsg = "Error reading from device";
                 throw std::runtime_error(errmsg);
             }
-            _blockcache.insert(i, cacheEntry);
+            _blockcache[i] = cacheEntry;
         }
     }
 }
 
-void DeviceWrapper::pread(char *buf, quint64 size, quint64 offset)
+void DeviceWrapper::pread(char *buf, uint64_t size, uint64_t offset)
 {
     if (!size)
         return;
 
     _readIntoBlockCacheIfNeeded(offset, size);
-    quint64 firstBlock = offset / 4096;
-    quint64 offsetInBlock = offset % 4096;
+    uint64_t firstBlock = offset / 4096;
+    uint64_t offsetInBlock = offset % 4096;
 
     for (auto i = firstBlock; size; i++)
     {
-        auto block = _blockcache.value(i);
-        size_t bytesToCopyFromBlock = qMin(4096-offsetInBlock, size);
+        auto block = _blockcache.at(i);
+        size_t bytesToCopyFromBlock = std::min(4096-offsetInBlock, size);
         memcpy(buf, block->block + offsetInBlock, bytesToCopyFromBlock);
 
         buf  += bytesToCopyFromBlock;
@@ -120,13 +120,13 @@ void DeviceWrapper::pread(char *buf, quint64 size, quint64 offset)
     }
 }
 
-void DeviceWrapper::pwrite(const char *buf, quint64 size, quint64 offset)
+void DeviceWrapper::pwrite(const char *buf, uint64_t size, uint64_t offset)
 {
     if (!size)
         return;
 
-    quint64 firstBlock = offset / 4096;
-    quint64 offsetInBlock = offset % 4096;
+    uint64_t firstBlock = offset / 4096;
+    uint64_t offsetInBlock = offset % 4096;
 
     if (offsetInBlock || size % 4096)
     {
@@ -137,15 +137,15 @@ void DeviceWrapper::pwrite(const char *buf, quint64 size, quint64 offset)
 
     for (auto i = firstBlock; size; i++)
     {
-        auto block = _blockcache.value(i, NULL);
+        auto block = _blockcache.at(i);
         if (!block)
         {
-            block = new DeviceWrapperBlockCacheEntry(this);
-            _blockcache.insert(i, block);
+            block = new DeviceWrapperBlockCacheEntry();
+            _blockcache[i] = block;
         }
 
         block->dirty = true;
-        size_t bytesToCopyFromBlock = qMin(4096-offsetInBlock, size);
+        size_t bytesToCopyFromBlock = std::min(4096-offsetInBlock, size);
         memcpy(block->block + offsetInBlock, buf, bytesToCopyFromBlock);
 
         buf  += bytesToCopyFromBlock;
@@ -168,13 +168,13 @@ DeviceWrapperFatPartition *DeviceWrapper::fatPartition(int nr)
 
     if (!strncmp("EFI PART", gpt.Signature, 8) && gpt.MyLBA == 1)
     {
-        qDebug() << "Using GPT partition table";
+        std::cout << "Using GPT partition table";
         if (nr > gpt.NumberOfPartitionEntries)
             throw std::runtime_error("Partition does not exist");
 
         pread((char *) &gptpart, sizeof(gptpart), gpt.PartitionEntryLBA*512 + gpt.SizeOfPartitionEntry*(nr-1));
 
-        return new DeviceWrapperFatPartition(this, gptpart.StartingLBA*512, (gptpart.EndingLBA-gptpart.StartingLBA+1)*512, this);
+        return new DeviceWrapperFatPartition(this, gptpart.StartingLBA*512, (gptpart.EndingLBA-gptpart.StartingLBA+1)*512);
     }
 
     /* MBR table handling */
@@ -187,6 +187,6 @@ DeviceWrapperFatPartition *DeviceWrapper::fatPartition(int nr)
     if (!mbr.part[nr-1].starting_sector || !mbr.part[nr-1].nr_of_sectors)
         throw std::runtime_error("Partition does not exist");
 
-    return new DeviceWrapperFatPartition(this, mbr.part[nr-1].starting_sector*512, mbr.part[nr-1].nr_of_sectors*512, this);
+    return new DeviceWrapperFatPartition(this, mbr.part[nr-1].starting_sector*512, mbr.part[nr-1].nr_of_sectors*512);
 }
 

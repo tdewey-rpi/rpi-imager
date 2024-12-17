@@ -6,23 +6,25 @@
  * Copyright (C) 2022 Raspberry Pi Ltd
  */
 
+#include <chrono>
+#include <string>
+#include <vector>
+#include <list>
+#include <cstdint>
+
 #include "devicewrapperpartition.h"
-#include <QObject>
-#include <QDate>
-#include <QTime>
 
 enum fatType { FAT12, FAT16, FAT32, EXFAT };
 struct dir_entry;
 
 class DeviceWrapperFatPartition : public DeviceWrapperPartition
 {
-    Q_OBJECT
 public:
-    DeviceWrapperFatPartition(DeviceWrapper *dw, quint64 partStart, quint64 partLen, QObject *parent = nullptr);
+    DeviceWrapperFatPartition(DeviceWrapper *dw, uint64_t partStart, uint64_t partLen);
 
-    QByteArray readFile(const QString &filename);
-    void writeFile(const QString &filename, const QByteArray &contents);
-    bool fileExists(const QString &filename);
+    std::vector<uint8_t> readFile(const std::string &filename);
+    void writeFile(const std::string &filename, const std::vector<uint8_t> &contents);
+    bool fileExists(const std::string &filename);
 
 protected:
     enum fatType _type;
@@ -30,10 +32,10 @@ protected:
     uint32_t _fat16_rootDirSectors, _fat16_firstRootDirSector;
     uint32_t _fat32_firstRootDirCluster, _fat32_currentRootDirCluster;
     uint16_t _bytesPerSector, _fat32_fsinfoSector;
-    QList<uint32_t> _fatStartOffset;
-    QList<uint32_t> _currentDirClusters;
+    std::list<uint32_t> _fatStartOffset;
+    std::list<uint32_t> _currentDirClusters;
 
-    QList<uint32_t> getClusterChain(uint32_t firstCluster);
+    std::list<uint32_t> getClusterChain(uint32_t firstCluster);
     void setFAT16(uint16_t cluster, uint16_t value);
     void setFAT32(uint32_t cluster, uint32_t value);
     void setFAT(uint32_t cluster, uint32_t value);
@@ -41,15 +43,15 @@ protected:
     void seekCluster(uint32_t cluster);
     uint32_t allocateCluster();
     uint32_t allocateCluster(uint32_t previousCluster);
-    bool getDirEntry(const QString &longFilename, struct dir_entry *entry, bool createIfNotExist = false);
-    bool dirNameExists(const QByteArray dirname);
+    bool getDirEntry(const std::string &longFilename, struct dir_entry *entry, bool createIfNotExist = false);
+    bool dirNameExists(const std::string &dirname);
     void updateDirEntry(struct dir_entry *dirEntry);
     void writeDirEntryAtCurrentPos(struct dir_entry *dirEntry);
     void openDir();
     bool readDir(struct dir_entry *result);
     void updateFSinfo(int deltaClusters, uint32_t nextFreeClusterHint);
-    uint16_t QTimeToFATtime(const QTime &time);
-    uint16_t QDateToFATdate(const QDate &date);
+    uint16_t TimeToFATtime(const std::chrono::zoned_time &time);
+    uint16_t DateToFATdate(const std::chrono::zoned_time &date);
 };
 
 #endif // DEVICEWRAPPERFATPARTITION_H

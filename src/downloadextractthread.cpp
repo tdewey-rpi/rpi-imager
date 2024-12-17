@@ -22,7 +22,7 @@
 
 using namespace std;
 
-const int DownloadExtractThread::MAX_QUEUE_SIZE = 64;
+constexpr int DownloadExtractThread::MAX_QUEUE_SIZE = 64;
 
 class _extractThreadClass : public QThread {
 public:
@@ -341,17 +341,17 @@ void DownloadExtractThread::extractMultiFileRun()
           _checkResult(archive_write_finish_entry(ext), ext);
         }
 
-        QByteArray computedHash = _inputHash.result().toHex();
-        qDebug() << "Hash of compressed multi-file zip:" << computedHash;
-        if (!_expectedHash.isEmpty() && _expectedHash != computedHash)
+        auto computedHash = _inputHash.result();
+        //std::cout << "Hash of compressed multi-file zip:" << hex << computedHash;
+        if (!_expectedHash.empty() && _expectedHash != computedHash)
         {
-            qDebug() << "Mismatch with expected hash:" << _expectedHash;
+            std::cout << "Mismatch with expected hash" << std::endl;
             throw runtime_error("Download corrupt. SHA256 does not match");
         }
         if (_cacheEnabled && _expectedHash == computedHash)
         {
             _cachefile.close();
-            emit cacheFileUpdated(computedHash);
+            emit cacheFileUpdated(QByteArray(reinterpret_cast<char *>(computedHash.data()), computedHash.size()));
         }
 
         emit success();
@@ -361,7 +361,7 @@ void DownloadExtractThread::extractMultiFileRun()
         if (_cachefile.isOpen())
             _cachefile.remove();
 
-        qDebug() << "Deleting extracted files";
+        std::cout << "Deleting extracted files";
         for (const auto& filename : filesExtracted)
         {
             QFileInfo fi(filename);

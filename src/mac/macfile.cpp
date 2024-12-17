@@ -3,18 +3,22 @@
  * Copyright (C) 2020 Raspberry Pi Ltd
  */
 
+#include <iostream>
+#include <string>
+
 #include "macfile.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <security/Authorization.h>
-#include <QDebug>
 
-MacFile::MacFile(QObject *parent)
-    : QFile(parent)
-{
+MacFile::MacFile() { }
 
+MacFile::~MacFile() {
+    if (fileDescriptor) {
+        close(fileDescriptor);
+    }
 }
 
 /* Prevent that Qt thinks /dev/rdisk does not permit seeks because it does not report size */
@@ -23,29 +27,28 @@ bool MacFile::isSequential() const
     return false;
 }
 
-MacFile::authOpenResult MacFile::authOpen(const QByteArray &filename)
+MacFile::AuthOpenResult MacFile::authOpen(const std::string &filename)
 {
     int fd = -1;
 
-    QByteArray right = "sys.openfile.readwrite."+filename;
-    AuthorizationItem item = {right, 0, nullptr, 0};
+    std::string right = "sys.openfile.readwrite."+filename;
+    AuthorizationItem item = {right.c_str(), 0, nullptr, 0};
     AuthorizationRights rights = {1, &item};
     AuthorizationFlags flags = kAuthorizationFlagInteractionAllowed |
             kAuthorizationFlagExtendRights |
             kAuthorizationFlagPreAuthorize;
     AuthorizationRef authRef;
     if (AuthorizationCreate(&rights, nullptr, flags, &authRef) != 0)
-        return authOpenCancelled;
+        return AuthOpenResult::AuthOpenCancelled;
 
     AuthorizationExternalForm externalForm;
     if (AuthorizationMakeExternalForm(authRef, &externalForm) != 0)
     {
         AuthorizationFree(authRef, 0);
-        return authOpenError;
+        return AuthOpenResult::AuthOpenError;
     }
 
     const char *cmd = "/usr/libexec/authopen";
-    QByteArray mode = QByteArray::number(O_RDWR);
     int pipe[2];
     int stdinpipe[2];
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, pipe);
@@ -58,7 +61,7 @@ MacFile::authOpenResult MacFile::authOpen(const QByteArray &filename)
         ::close(stdinpipe[1]);
         ::dup2(pipe[1], STDOUT_FILENO);
         ::dup2(stdinpipe[0], STDIN_FILENO);
-        ::execl(cmd, cmd, "-stdoutpipe", "-extauth", "-o", mode.data(), filename.data(), NULL);
+        ::execl(cmd, cmd, "-stdoutpipe", "-extauth", "-o", O_RDWR, filename.c_str(), NULL);
         ::exit(-1);
     }
     else
@@ -76,7 +79,7 @@ MacFile::authOpenResult MacFile::authOpen(const QByteArray &filename)
         const size_t cmsgSize = CMSG_SPACE(sizeof(int));
         char cmsg[cmsgSize];
 
-        struct msghdr msg = {0};
+        struct msghdr msg = {};
         msg.msg_iov = io_vec;
         msg.msg_iovlen = 1;
         msg.msg_control = cmsg;
@@ -87,17 +90,17 @@ MacFile::authOpenResult MacFile::authOpen(const QByteArray &filename)
             size = recvmsg(pipe[0], &msg, 0);
         } while (size == -1 && errno == EINTR);
 
-        qDebug() << "RECEIVED SIZE:" << size;
+        std::cout << "RECEIVED SIZE:" << size;
 
         if (size > 0) {
             struct cmsghdr *chdr = CMSG_FIRSTHDR(&msg);
             if (chdr && chdr->cmsg_type == SCM_RIGHTS) {
-                qDebug() << "SCMRIGHTS";
+                std::cout << "SCMRIGHTS";
                 fd = *( (int*) (CMSG_DATA(chdr)) );
             }
             else
             {
-                qDebug() << "NOT SCMRIGHTS";
+                std::cout << "NOT SCMRIGHTS";
             }
         }
 
@@ -110,18 +113,20 @@ MacFile::authOpenResult MacFile::authOpen(const QByteArray &filename)
 
         if (wpid == -1)
         {
-            qDebug() << "waitpid() failed executing authopen";
-            return authOpenError;
+            std::cout << "waitpid() failed executing authopen";
+            return AuthOpenResult::AuthOpenError;
         }
         if (WEXITSTATUS(status))
         {
-            qDebug() << "authopen returned failure code" << WEXITSTATUS(status);
-            return authOpenError;
+            std::cout << "authopen returned failure code" << WEXITSTATUS(status);
+            return AuthOpenResult::AuthOpenError;
         }
 
-        qDebug() << "fd received:" << fd;
+        std::cout << "fd received:" << fd;
     }
     AuthorizationFree(authRef, 0);
 
-    return open(fd, QIODevice::ReadWrite | QIODevice::ExistingOnly | QIODevice::Unbuffered, QFileDevice::AutoCloseHandle) ? authOpenSuccess : authOpenError;
+    fd = open(filename.c_str(), O_RDWR | O_NOCTTY);
+
+    return fd ? AuthOpenResult::AuthOpenSuccess : AuthOpenResult::AuthOpenError;
 }

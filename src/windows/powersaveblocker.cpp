@@ -4,51 +4,70 @@
  */
 
 #include "powersaveblocker.h"
-#include <QDebug>
 #include <string>
 
-PowerSaveBlocker::PowerSaveBlocker(QObject *parent) :
-    QObject(parent), _stayingAwake(false)
-{
-    _powerRequest = INVALID_HANDLE_VALUE
-}
+#include <windows.h>
 
-PowerSaveBlocker::~PowerSaveBlocker()
+class PowerSaveBlocker::impl
 {
-    if (_stayingAwake)
+public:
+    impl()
+        : _stayingAwake(false)
+    {
+        _powerRequest = INVALID_HANDLE_VALUE
+    };
+
+    ~impl() {
         removeBlock();
-}
+    }
+    void applyBlock(const std::string &reason) {
+        if (_stayingAwake)
+            return;
 
-void PowerSaveBlocker::applyBlock(const QString &reason)
-{
-    if (_stayingAwake)
-        return;
+        REASON_CONTEXT rc;
+        std::wstring wreason = reason;
+        rc.Version = POWER_REQUEST_CONTEXT_VERSION;
+        rc.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;
+        rc.Reason.SimpleReasonString = (wchar_t *) wreason.c_str();
+        _powerRequest = PowerCreateRequest(&rc);
 
-    REASON_CONTEXT rc;
-    std::wstring wreason = reason.toStdWString();
-    rc.Version = POWER_REQUEST_CONTEXT_VERSION;
-    rc.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;
-    rc.Reason.SimpleReasonString = (wchar_t *) wreason.c_str();
-    _powerRequest = PowerCreateRequest(&rc);
+        if (_powerRequest == INVALID_HANDLE_VALUE)
+        {
+            std::cerr << "Error creating power request:" << GetLastError();
+            return;
+        }
 
-    if (_powerRequest == INVALID_HANDLE_VALUE)
-    {
-        qDebug() << "Error creating power request:" << GetLastError();
-        return;
+        _stayingAwake = PowerSetRequest(_powerRequest, PowerRequestDisplayRequired);
+        if (!_stayingAwake)
+        {
+            std::cerr << "Error running PowerSetRequest():" << GetLastError();
+        }
+    }
+    void removeBlock() {
+        if (!_stayingAwake)
+            return;
+
+        _stayingAwake = PowerClearRequest(_powerRequest, PowerRequestDisplayRequired);
+        CloseHandle(_powerRequest);
     }
 
-    _stayingAwake = PowerSetRequest(_powerRequest, PowerRequestDisplayRequired);
-    if (!_stayingAwake)
-    {
-        qDebug() << "Error running PowerSetRequest():" << GetLastError();
-    }
+protected:
+    bool _stayingAwake;
+    HANDLE _powerRequest;
+};
+
+PowerSaveBlocker::PowerSaveBlocker() {
+    p_Impl = std::make_unique<PowerSaveBlocker::impl>();
 }
 
-void PowerSaveBlocker::removeBlock()
+PowerSaveBlocker::~PowerSaveBlocker() {}
+
+void PowerSaveBlocker::applyBlock(const std::string &reason)
 {
-    if (!_stayingAwake)
-        return;
-
-    _stayingAwake = PowerClearRequest(_powerRequest, PowerRequestDisplayRequired);
-    CloseHandle(_powerRequest);
+    p_Impl->applyBlock(reason);
 }
+
+void PowerSaveBlocker::removeBlock() {
+    p_Impl->removeBlock();
+}
+

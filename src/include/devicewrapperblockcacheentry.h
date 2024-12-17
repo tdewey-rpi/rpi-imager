@@ -6,13 +6,10 @@
  * Copyright (C) 2022 Raspberry Pi Ltd
  */
 
-#include <QObject>
+#include <cstddef>
 
-class DeviceWrapperBlockCacheEntry : QObject
-{
-    Q_OBJECT
-public:
-    DeviceWrapperBlockCacheEntry(QObject *parent, size_t blocksize = 4096);
+struct DeviceWrapperBlockCacheEntry {
+    DeviceWrapperBlockCacheEntry(std::size_t blocksize = 4096);
     ~DeviceWrapperBlockCacheEntry();
     char *block;
     bool dirty;

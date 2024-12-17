@@ -3,20 +3,22 @@
 
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2020 Raspberry Pi Ltd
+ * Copyright (C) 2020-2025 Raspberry Pi Ltd
  */
 
-#include <QFile>
+#include <string>
 
-class MacFile : public QFile
+struct MacFile
 {
-    Q_OBJECT
-public:
-    enum authOpenResult {authOpenCancelled, authOpenSuccess, authOpenError };
+    enum class AuthOpenResult { AuthOpenCancelled, AuthOpenSuccess, AuthOpenError };
 
-    MacFile(QObject *parent = nullptr);
+    MacFile();
+    ~MacFile();
     virtual bool isSequential() const;
-    authOpenResult authOpen(const QByteArray &filename);
+    AuthOpenResult authOpen(const std::string &filename);
+
+private:
+    int fileDescriptor;
 };
 
 #endif // MACFILE_H

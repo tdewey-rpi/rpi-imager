@@ -3,20 +3,19 @@
 
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2022 Raspberry Pi Ltd
+ * Copyright (C) 2022-2025 Raspberry Pi Ltd
  */
 
-#include <QObject>
-#include <QMap>
-#include <QFile>
+#include <map>
+#include <cstdint>
 
 class DeviceWrapperBlockCacheEntry;
 class DeviceWrapperFatPartition;
 
-#ifdef Q_OS_WIN
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
 #include "windows/winfile.h"
 typedef WinFile DeviceWrapperFile;
-#elif defined(Q_OS_DARWIN)
+#elif defined(__APPLE__)
 #include "mac/macfile.h"
 typedef MacFile DeviceWrapperFile;
 #else
@@ -24,27 +23,22 @@ typedef QFile DeviceWrapperFile;
 #endif
 
 
-class DeviceWrapper : public QObject
-{
-    Q_OBJECT
+class DeviceWrapper {
 public:
-    explicit DeviceWrapper(DeviceWrapperFile *file, QObject *parent = nullptr);
+    explicit DeviceWrapper(DeviceWrapperFile *file);
     virtual ~DeviceWrapper();
     void sync();
-    void pwrite(const char *buf, quint64 size, quint64 offset);
-    void pread(char *buf, quint64 size, quint64 offset);
+    void pwrite(const char *buf, uint64_t size, uint64_t offset);
+    void pread(char *buf, uint64_t size, uint64_t offset);
     DeviceWrapperFatPartition *fatPartition(int nr);
 
 protected:
     bool _dirty;
-    QMap<quint64,DeviceWrapperBlockCacheEntry *> _blockcache;
+    std::map<uint64_t,DeviceWrapperBlockCacheEntry *> _blockcache;
     DeviceWrapperFile *_file;
 
-    void _readIntoBlockCacheIfNeeded(quint64 offset, quint64 size);
-    void _seekToBlock(quint64 blockNr);
-
-signals:
-
+    void _readIntoBlockCacheIfNeeded(uint64_t offset, uint64_t size);
+    void _seekToBlock(uint64_t blockNr);
 };
 
 #endif // DEVICEWRAPPER_H

@@ -35,10 +35,10 @@ using namespace std;
 QByteArray DownloadThread::_proxy;
 int DownloadThread::_curlCount = 0;
 
-DownloadThread::DownloadThread(const QByteArray &url, const QByteArray &localfilename, const QByteArray &expectedHash, QObject *parent) :
-    QThread(parent), _startOffset(0), _lastDlTotal(0), _lastDlNow(0), _verifyTotal(0), _lastVerifyNow(0), _bytesWritten(0), _lastFailureOffset(0), _sectorsStart(-1), _url(url), _filename(localfilename), _expectedHash(expectedHash),
+DownloadThread::DownloadThread(const std::string &url, const std::string &localfilename, const std::array<uint8_t, 32> &expectedHash) 
+    : _startOffset(0), _lastDlTotal(0), _lastDlNow(0), _verifyTotal(0), _lastVerifyNow(0), _bytesWritten(0), _lastFailureOffset(0), _sectorsStart(-1), _url(url), _filename(localfilename), _expectedHash(expectedHash.),
     _firstBlock(nullptr), _cancelled(false), _successful(false), _verifyEnabled(false), _cacheEnabled(false), _lastModified(0), _serverTime(0),  _lastFailureTime(0),
-    _inputBufferSize(0), _file(NULL), _writehash(OSLIST_HASH_ALGORITHM), _verifyhash(OSLIST_HASH_ALGORITHM)
+    _inputBufferSize(0), _file(_filename), _writehash(OSLIST_HASH_ALGORITHM), _verifyhash(OSLIST_HASH_ALGORITHM)
 {
     if (!_curlCount)
         curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -208,11 +208,11 @@ bool DownloadThread::_openAndPrepareDevice()
 
     auto authopenresult = _file.authOpen(_filename);
 
-    if (authopenresult == _file.authOpenCancelled) {
+    if (authopenresult == MacFile::AuthOpenResult::AuthOpenCancelled) {
         /* User cancelled authentication */
         emit error(tr("Authentication cancelled"));
         return false;
-    } else if (authopenresult == _file.authOpenError) {
+    } else if (authopenresult == MacFile::AuthOpenResult::AuthOpenError) {
         QString msg = tr("Error running authopen to gain access to disk device '%1'").arg(QString(_filename));
         msg += "<br>"+tr("Please verify if 'Raspberry Pi Imager' is allowed access to 'removable volumes' in privacy settings (under 'files and folders' or alternatively give it 'full disk access').");
         QStringList args("x-apple.systempreferences:com.apple.preference.security?Privacy_RemovableVolume");
@@ -295,11 +295,12 @@ bool DownloadThread::_openAndPrepareDevice()
 
 #ifndef Q_OS_WIN
     // Zero out MBR
-    qint64 knownsize = _file.size();
-    QByteArray emptyMB(1024*1024, 0);
+    auto knownsize = _file.size();
+    std::array<uint8_t, 1024*1024> emptyMB;
+    emptyMB.fill({0});
 
     emit preparationStatusUpdate(tr("zeroing out first and last MB of drive"));
-    qDebug() << "Zeroing out first and last MB of drive";
+    std::cout << "Zeroing out first and last MB of drive";
     _timer.start();
 
     if (!_file.write(emptyMB.data(), emptyMB.size()) || !_file.flush())
@@ -314,7 +315,7 @@ bool DownloadThread::_openAndPrepareDevice()
         if (!_file.seek(knownsize-emptyMB.size())
                 || !_file.write(emptyMB.data(), emptyMB.size())
                 || !_file.flush()
-                || ::fsync(_file.handle()))
+                || !_file.sync())
         {
             emit error(tr("Write error while trying to zero out last part of card.<br>"
                           "Card could be advertising wrong capacity (possible counterfeit)."));
@@ -323,7 +324,7 @@ bool DownloadThread::_openAndPrepareDevice()
     }
     emptyMB.clear();
     _file.seek(0);
-    qDebug() << "Done zeroing out start and end of drive. Took" << _timer.elapsed() / 1000 << "seconds";
+    std::cout << "Done zeroing out start and end of drive. Took" << _timer.elapsed() / 1000 << "seconds";
 #endif
 
 #ifdef Q_OS_LINUX
@@ -696,7 +697,8 @@ void DownloadThread::_writeComplete()
         qDebug() << "Mismatch with expected hash:" << _expectedHash;
         if (_cachefile.isOpen())
             _cachefile.remove();
-        DownloadThread::_onDownloadError(tr("Download corrupt. Hash does not match"));
+        DownloadThread::_onDownloadError(tr("Download corrupt. Hash does not match."));
+        qDebug << "Wanted " << _expectedHash << ", got " << computedHash;
         _closeFiles();
         return;
     }

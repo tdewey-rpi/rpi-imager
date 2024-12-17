@@ -660,7 +660,7 @@ DriveListModel *ImageWriter::getDriveList()
 
 void ImageWriter::startProgressPolling()
 {
-    _powersave.applyBlock(tr("Downloading and writing image"));
+    _powersave.applyBlock(tr("Downloading and writing image").toStdString());
     _dlnow = 0; _verifynow = 0;
     _polltimer.start(PROGRESS_UPDATE_INTERVAL);
 }
@@ -1143,10 +1143,10 @@ QStringList ImageWriter::getKeymapLayoutList()
     return keymaps;
 }
 
-
 QString ImageWriter::getSSID()
 {
-    return WlanCredentials::instance()->getSSID();
+    // TODO: Drop QString, pass bytes, avoid data hiding at library interface level
+    return QString::fromUtf8(WlanCredentials::instance()->getSSID().data());
 }
 
 QString ImageWriter::getPSK()
@@ -1161,8 +1161,8 @@ QString ImageWriter::getPSK()
         return QString();
     }
 #endif
-
-    return WlanCredentials::instance()->getPSK();
+    // TODO: Drop QString, pass bytes, avoid data hiding at library interface level
+    return QString::fromUtf8(WlanCredentials::instance()->getPSK().data());
 }
 
 bool ImageWriter::getBoolSetting(const QString &key)

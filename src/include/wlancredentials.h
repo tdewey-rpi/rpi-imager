@@ -10,14 +10,15 @@
  * Copyright (C) 2023 Raspberry Pi Ltd
  */
 
-#include <QByteArray>
+#include <vector>
+#include <cstdint>
 
 class WlanCredentials
 {
 public:
     static WlanCredentials *instance();
-    virtual QByteArray getSSID() = 0;
-    virtual QByteArray getPSK() = 0;
+    virtual std::vector<uint8_t> getSSID() = 0;
+    virtual std::vector<uint8_t> getPSK() = 0;
 
 protected:
     static WlanCredentials *_instance;
