@@ -308,7 +308,8 @@ FileError LinuxHelperFileOperations::Close() {
     // helper's session teardown unmaps shm too, but releasing here
     // gets the client-side mmap dropped cleanly via mapBulkBuffer(0).
     if (state_->ring_base) {
-        if (auto bulk = bulkPlane()) {
+        auto bulk = bulkPlane();
+        if (bulk.valid()) {
             (void)bulk.mapBulkBuffer(sid, 0);
         }
         state_->ring_base = nullptr;
@@ -560,7 +561,8 @@ void LinuxHelperFileOperations::releaseZeroCopyRing() {
     std::lock_guard<std::mutex> lk(state_->mutex);
     if (!state_->zerocopy_active) return;
     if (state_->open) {
-        if (auto bulk = bulkPlane()) {
+        auto bulk = bulkPlane();
+        if (bulk.valid()) {
             (void)bulk.mapBulkBuffer(state_->session_id, 0);
         }
     }

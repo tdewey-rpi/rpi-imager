@@ -290,8 +290,11 @@ int runPrivilegedHelperDiagnostic(const std::string& device_path,
             "for the embedded path.\n");
         return 2;
     }
-#elif !preferNativePrivilegedHelper("RPI_IMAGER_USE_LINUX_HELPER")
-    if (::geteuid() != 0) {
+#else
+    // preferNativePrivilegedHelper() reads the environment at run time, so this
+    // cannot be a preprocessor condition.
+    if (!preferNativePrivilegedHelper("RPI_IMAGER_USE_LINUX_HELPER")
+        && ::geteuid() != 0) {
         std::fprintf(stderr,
             "Helper path disabled (RPI_IMAGER_USE_LEGACY_INPROCESS=1 or "
             "RPI_IMAGER_USE_LINUX_HELPER=0). Unset those to test the polkit helper,\n"
@@ -314,11 +317,14 @@ int runPrivilegedHelperDiagnostic(const std::string& device_path,
     std::fprintf(stderr,
         "Build without -DRPI_IMAGER_DISABLE_WINDOWS_HELPER=ON.\n");
     return 2;
-#elif !preferNativePrivilegedHelper("RPI_IMAGER_USE_WINDOWS_HELPER")
-    std::fprintf(stderr,
-        "Helper path disabled (RPI_IMAGER_USE_LEGACY_INPROCESS=1 or "
-        "RPI_IMAGER_USE_WINDOWS_HELPER=0).\n");
-    return 2;
+#else
+    // Run-time environment check; cannot be a preprocessor condition.
+    if (!preferNativePrivilegedHelper("RPI_IMAGER_USE_WINDOWS_HELPER")) {
+        std::fprintf(stderr,
+            "Helper path disabled (RPI_IMAGER_USE_LEGACY_INPROCESS=1 or "
+            "RPI_IMAGER_USE_WINDOWS_HELPER=0).\n");
+        return 2;
+    }
 #endif
 
     auto& backend = getProcessPrivilegedWriter();
