@@ -119,16 +119,18 @@ bool sha256FileZeroedSections(int fd,
         gnutls_hash(hd, buf.data(), static_cast<std::size_t>(n));
     }
 
-    const int rc = gnutls_hash_output(hd, out_digest);
+    gnutls_hash_output(hd, out_digest);
     gnutls_hash_deinit(hd, nullptr);
-    return rc == 0;
+    return true;
 }
 
 class GpgmeContext {
 public:
     GpgmeContext() {
-        const gpgme_error_t err = gpgme_check_version(nullptr);
-        if (err) {
+        // gpgme_check_version() returns the library version string, or NULL if
+        // the runtime library is older than the version gpgme.h was built for.
+        // It must be called before any other gpgme function.
+        if (gpgme_check_version(nullptr) == nullptr) {
             ok_ = false;
             return;
         }
@@ -347,13 +349,36 @@ VerifyResult verifyEmbeddedSignature(
         return VerifyResult::Tampered;
     }
 
-    gpgme_verify_result_t result = gpgme_get_verify_result(ctx);
+    const gpgme_verify_result_t result = gpgme_op_verify_result(ctx);
     if (!result || !result->signatures) {
         gpgme_release(ctx);
         return VerifyResult::Tampered;
     }
 
-    char* fpr = result->signatures->fpr;
+    const gpgme_signature_t sig_info = result->signatures;
+
+    // gpgme_op_verify() reporting no error means only that the operation ran;
+    // whether the signature actually checked out lives in the signature's own
+    // status. A signature made by a key we do not hold comes back here as
+    // GPG_ERR_NO_PUBKEY with fpr still populated, so without this check it
+    // would reach the fingerprint comparison and pass.
+    if (gpgme_err_code(sig_info->status) != GPG_ERR_NO_ERROR) {
+        gpgme_release(ctx);
+        return VerifyResult::Tampered;
+    }
+
+    // A cryptographically good signature from a key that is revoked, expired
+    // or absent must not authorise a privileged helper.
+    constexpr unsigned int kRejectedSummary =
+        GPGME_SIGSUM_KEY_REVOKED | GPGME_SIGSUM_KEY_EXPIRED |
+        GPGME_SIGSUM_SIG_EXPIRED | GPGME_SIGSUM_KEY_MISSING |
+        GPGME_SIGSUM_RED;
+    if ((static_cast<unsigned int>(sig_info->summary) & kRejectedSummary) != 0) {
+        gpgme_release(ctx);
+        return VerifyResult::UntrustedKey;
+    }
+
+    const char* fpr = sig_info->fpr;
     if (!fpr || !fingerprintAllowed(fpr, trusted_key_fingerprints)) {
         gpgme_release(ctx);
         return VerifyResult::UntrustedKey;
