@@ -21,7 +21,7 @@ struct DriveWatchService::Impl {
     std::atomic<bool> stop{false};
     std::thread thread;
 
-    udev* udev = nullptr;
+    udev* udev_ctx = nullptr;
     udev_monitor* monitor = nullptr;
     int monitor_fd = -1;
 
@@ -33,8 +33,8 @@ struct DriveWatchService::Impl {
         if (monitor) {
             udev_monitor_unref(monitor);
         }
-        if (udev) {
-            udev_unref(udev);
+        if (udev_ctx) {
+            udev_unref(udev_ctx);
         }
     }
 
@@ -42,11 +42,11 @@ struct DriveWatchService::Impl {
         if (monitor) {
             return;
         }
-        udev = udev_new();
-        if (!udev) {
+        udev_ctx = udev_new();
+        if (!udev_ctx) {
             return;
         }
-        monitor = udev_monitor_new_from_netlink(udev, "udev");
+        monitor = udev_monitor_new_from_netlink(udev_ctx, "udev");
         if (!monitor) {
             return;
         }

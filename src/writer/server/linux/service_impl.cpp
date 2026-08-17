@@ -64,6 +64,15 @@ std::uint64_t maxBulkBufferBytes() {
     return third > kFloor ? third : kFloor;
 }
 
+proto::ErrorInfo ok() { return proto::ErrorInfo(); }
+
+proto::ErrorInfo fail(proto::ErrorCode code, const std::string& detail) {
+    proto::ErrorInfo e;
+    e.set_code(code);
+    e.set_detail(detail);
+    return e;
+}
+
 proto::ErrorInfo mapMaintenanceError(linux_maint::Result r, const char* op) {
     switch (r) {
         case linux_maint::Result::Success:
@@ -82,15 +91,6 @@ proto::ErrorInfo mapMaintenanceError(linux_maint::Result r, const char* op) {
                             ? std::string(op) + " failed"
                             : linux_maint::lastDetail());
     }
-}
-
-proto::ErrorInfo ok() { return proto::ErrorInfo(); }
-
-proto::ErrorInfo fail(proto::ErrorCode code, const std::string& detail) {
-    proto::ErrorInfo e;
-    e.set_code(code);
-    e.set_detail(detail);
-    return e;
 }
 
 proto::ErrorCode mapFileError(FileError e) {
@@ -125,9 +125,7 @@ public:
     }
     bool finish(std::string& out32) {
         unsigned char digest[32] = {0};
-        if (gnutls_hash_output(hd_, digest) != 0) {
-            return false;
-        }
+        gnutls_hash_output(hd_, digest);
         out32.assign(reinterpret_cast<char*>(digest), sizeof(digest));
         return true;
     }
@@ -165,7 +163,7 @@ public:
 private:
     Session* find(const proto::SessionId& sid) {
         auto it = sessions_.find(sid.v());
-        return it == sessions_.end() ? nullptr : &it->second;
+        return it == sessions_.end() ? nullptr : it->second.get();
     }
 
     void sendDriveChangedEvent();
@@ -187,7 +185,9 @@ private:
     proto::ErrorInfo handleUnmount(const std::string& payload);
     proto::ErrorInfo handleEject(const std::string& payload);
 
-    std::unordered_map<std::uint64_t, Session> sessions_;
+    // Held by pointer: Session embeds a LinuxSharedMemory and an atomic counter,
+    // so it is neither copyable nor movable.
+    std::unordered_map<std::uint64_t, std::unique_ptr<Session>> sessions_;
     std::uint64_t next_id_ = 1;
     int pending_fd_ = -1;
 
@@ -238,9 +238,9 @@ proto::ErrorInfo Helper::handleOpenSession(const std::string& payload, std::stri
         return fail(proto::ERROR_DEVICE_PERMISSION, "helper only opens /dev/* paths");
     }
 
-    Session s;
-    s.fops = std::make_unique<rpi_imager::LinuxFileOperations>();
-    const FileError e = s.fops->OpenDevice(req.device_path());
+    auto s = std::make_unique<Session>();
+    s->fops = std::make_unique<rpi_imager::LinuxFileOperations>();
+    const FileError e = s->fops->OpenDevice(req.device_path());
     if (e != FileError::kSuccess) {
         return fail(mapFileError(e), "OpenDevice failed for " + req.device_path());
     }
@@ -248,7 +248,7 @@ proto::ErrorInfo Helper::handleOpenSession(const std::string& payload, std::stri
     const std::uint64_t id = next_id_++;
     auto [it, inserted] = sessions_.emplace(id, std::move(s));
     (void)inserted;
-    it->second.bulk_writer.start(it->second.fops.get(), outbound_);
+    it->second->bulk_writer.start(it->second->fops.get(), outbound_);
 
     proto::SessionId sid;
     sid.set_v(id);
@@ -496,7 +496,7 @@ proto::ErrorInfo Helper::handleListDrives(std::string& out) {
         linux_drivelist::listStorageDevices();
     const proto::DriveList list = buildDriveList(devices);
     list.SerializeToString(&out);
-    helperLog("listDrives count=" + std::to_string(list.drives_size()));
+    helperLog(("listDrives count=" + std::to_string(list.drives_size())).c_str());
     return ok();
 }
 
@@ -507,7 +507,7 @@ proto::ErrorInfo Helper::handleUnmount(const std::string& payload) {
     }
     const auto r = linux_maint::unmountDisk(req.device_path());
     if (r == linux_maint::Result::Success) {
-        helperLog("unmount ok path=" + req.device_path());
+        helperLog(("unmount ok path=" + req.device_path()).c_str());
         return ok();
     }
     proto::ErrorInfo err = mapMaintenanceError(r, "unmount");
@@ -548,7 +548,7 @@ proto::ErrorInfo Helper::handleCloseSession(const std::string& payload, std::str
     auto it = sessions_.find(req.session_id().v());
     if (it == sessions_.end()) return fail(proto::ERROR_SESSION_NOT_FOUND, "closeSession: no session");
 
-    Session& s = it->second;
+    Session& s = *it->second;
     s.bulk_writer.shutdown();
     (void)s.fops->WaitForPendingWrites();
     s.bulk.release();

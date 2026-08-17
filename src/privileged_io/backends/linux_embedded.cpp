@@ -15,6 +15,7 @@
 #include <cstring>
 #include <deque>
 #include <fcntl.h>
+#include <memory>
 #include <mutex>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -71,7 +72,9 @@ struct LinuxEmbeddedBackend::State {
     };
 
     std::mutex mutex;
-    std::unordered_map<std::uint64_t, Session> sessions;
+    // Held by pointer: Session embeds a LinuxSharedMemory, which owns an fd and
+    // an mmap and is deliberately neither copyable nor movable.
+    std::unordered_map<std::uint64_t, std::unique_ptr<Session>> sessions;
     std::uint64_t next_id = 1;
 
     wire::LinuxSharedMemory client_bulk;
@@ -101,9 +104,9 @@ struct LinuxEmbeddedBackend::State {
             worker.join();
         }
         for (auto& [_, s] : sessions) {
-            s.bulk.release();
-            if (s.fd >= 0) {
-                ::close(s.fd);
+            s->bulk.release();
+            if (s->fd >= 0) {
+                ::close(s->fd);
             }
         }
         client_bulk.release();
@@ -168,16 +171,19 @@ Result<proto_ns::SessionId> LinuxEmbeddedBackend::openSession(
                       "open failed: " + device_path, errno));
     }
 
-    State::Session s;
-    s.id = state_->next_id++;
-    s.path = device_path;
-    s.fd = fd;
+    auto s = std::make_unique<State::Session>();
+    s->id = state_->next_id++;
+    s->path = device_path;
+    s->fd = fd;
 
     proto_ns::SessionId sid;
-    sid.set_v(s.id);
+    sid.set_v(s->id);
     {
+        // Take the id before the move: argument evaluation order is
+        // unspecified, so s->id must not be read from a moved-from pointer.
+        const std::uint64_t session_id = s->id;
         std::lock_guard<std::mutex> lk(state_->mutex);
-        state_->sessions.emplace(s.id, std::move(s));
+        state_->sessions.emplace(session_id, std::move(s));
     }
     return Result<proto_ns::SessionId>::success(std::move(sid));
 }
@@ -190,7 +196,7 @@ Result<proto_ns::DeviceLimits> LinuxEmbeddedBackend::queryDeviceLimits(
         return Result<proto_ns::DeviceLimits>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    const std::uint64_t size = deviceSizeBytes(it->second.fd);
+    const std::uint64_t size = deviceSizeBytes(it->second->fd);
     proto_ns::DeviceLimits lim;
     lim.set_total_bytes(size);
     lim.set_max_transfer_bytes(32u * 1024u * 1024u);
@@ -208,7 +214,7 @@ Result<void> LinuxEmbeddedBackend::prepareDevice(
     }
     constexpr std::size_t kMb = 1ull * 1024 * 1024;
     std::vector<std::uint8_t> zeros(kMb, 0);
-    Session& s = it->second;
+    State::Session& s = *it->second;
     const std::uint64_t dev_size = deviceSizeBytes(s.fd);
 
     if (opts.zero_first_mb()) {
@@ -257,7 +263,7 @@ Result<std::size_t> LinuxEmbeddedBackend::readChunk(
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    const ssize_t n = ::pread(it->second.fd, buf, len, static_cast<off_t>(offset));
+    const ssize_t n = ::pread(it->second->fd, buf, len, static_cast<off_t>(offset));
     if (n < 0) {
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_DEVICE_IO, "pread failed", errno));
@@ -274,12 +280,12 @@ Result<std::size_t> LinuxEmbeddedBackend::writeChunk(
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    const ssize_t n = ::pwrite(it->second.fd, in, len, static_cast<off_t>(offset));
+    const ssize_t n = ::pwrite(it->second->fd, in, len, static_cast<off_t>(offset));
     if (n < 0) {
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_WRITE_FAILED, "pwrite failed", errno));
     }
-    it->second.bytes_written += static_cast<std::uint64_t>(n);
+    it->second->bytes_written += static_cast<std::uint64_t>(n);
     return Result<std::size_t>::success(static_cast<std::size_t>(n));
 }
 
@@ -302,7 +308,7 @@ Result<std::string> LinuxEmbeddedBackend::hashDeviceSha256(
     constexpr std::size_t kChunk = 1u * 1024 * 1024;
     std::vector<std::uint8_t> buf(kChunk);
     std::uint64_t remaining = length;
-    const int fd = it->second.fd;
+    const int fd = it->second->fd;
     while (remaining > 0) {
         const std::size_t want = static_cast<std::size_t>(
             remaining < kChunk ? remaining : kChunk);
@@ -330,7 +336,7 @@ Result<void> LinuxEmbeddedBackend::syncDevice(const proto_ns::SessionId& sid) {
         return Result<void>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    if (::fsync(it->second.fd) != 0) {
+    if (::fsync(it->second->fd) != 0) {
         return Result<void>::failure(
             makeError(proto_ns::ERROR_SYNC_FAILED, "fsync failed", errno));
     }
@@ -346,18 +352,18 @@ Result<proto_ns::SessionStats> LinuxEmbeddedBackend::closeSession(
         return Result<proto_ns::SessionStats>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    Session s = std::move(it->second);
+    std::unique_ptr<State::Session> s = std::move(it->second);
     state_->sessions.erase(it);
 
     const auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - s.started).count();
-    if (s.fd >= 0) {
-        ::close(s.fd);
+        std::chrono::steady_clock::now() - s->started).count();
+    if (s->fd >= 0) {
+        ::close(s->fd);
     }
-    s.bulk.release();
+    s->bulk.release();
 
     proto_ns::SessionStats stats;
-    stats.set_bytes_written(s.bytes_written);
+    stats.set_bytes_written(s->bytes_written);
     stats.set_duration_ms(static_cast<std::uint64_t>(dur));
     stats.set_state(proto_ns::SESSION_STATE_SUCCEEDED);
     return Result<proto_ns::SessionStats>::success(std::move(stats));
@@ -454,19 +460,19 @@ Result<std::size_t> LinuxEmbeddedBackend::bulkWriteFromBuffer(
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_SESSION_NOT_FOUND, "no such session"));
     }
-    if (it->second.bytes_written + length > kMaxSessionBytes) {
+    if (it->second->bytes_written + length > kMaxSessionBytes) {
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_WRITE_FAILED, "session bytes-written cap reached"));
     }
     const auto* src = static_cast<const std::uint8_t*>(state_->client_bulk.base())
                         + buffer_offset;
-    const ssize_t n = ::pwrite(it->second.fd, src, length,
+    const ssize_t n = ::pwrite(it->second->fd, src, length,
                                static_cast<off_t>(device_offset));
     if (n < 0 || static_cast<std::size_t>(n) != length) {
         return Result<std::size_t>::failure(
             makeError(proto_ns::ERROR_WRITE_FAILED, "bulk pwrite failed", errno));
     }
-    it->second.bytes_written += length;
+    it->second->bytes_written += length;
     return Result<std::size_t>::success(length);
 }
 
