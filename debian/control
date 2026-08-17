@@ -2,7 +2,8 @@ Source: rpi-imager
 Section: admin
 Priority: optional
 Maintainer: Tom Dewey <tom.dewey@raspberrypi.com>
-Build-Depends: debhelper-compat (= 13), cmake, libgnutls28-dev, liburing-dev, dh-exec
+Build-Depends: debhelper-compat (= 13), cmake, libgnutls28-dev, liburing-dev, dh-exec,
+               pkg-config, libudev-dev, libgpgme-dev
 Standards-Version: 4.1.2
 Homepage: https://www.raspberrypi.com/software
 
@@ -21,6 +22,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, dosfstools, fdisk, fuse, libfuse2,
          libwayland-client0, libwayland-cursor0,
          libegl1, libgl1, libopengl0,
          libdbus-1-3,
+         libgpgme11,
          libdrm2, libgbm1, libinput10, libudev1
 Recommends: udisks2
 Conflicts: rpi-imager-embedded

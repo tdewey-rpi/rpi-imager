@@ -571,6 +571,10 @@ appimage_lib_excluded() {
 	libsystemd.so.*|libdbus-1.so.*|libcap.so.*|libudev.so.*|libselinux.so.*) return 0 ;;
 	# font stack: must match the host's fontconfig cache and configuration
 	libfontconfig.so.*|libfreetype.so.*|libexpat.so.*) return 0 ;;
+	# GPG: gpgme execs the host's gpg engine binary and talks to its agent, so
+	# the library must match the gnupg installation it drives. Declared as
+	# libgpgme11 in debian/control instead.
+	libgpgme.so.*|libgpg-error.so.*|libassuan.so.*) return 0 ;;
 	esac
 	return 1
 }
